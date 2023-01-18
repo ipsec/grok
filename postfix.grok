@@ -1,0 +1,115 @@
+# Syslog stuff
+COMPONENT ([\w._\/%-]+)
+COMPID postfix\/%{COMPONENT:component}(?:\[%{NUMBER:pid}\])?
+POSTFIX (?:%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp8601}) (?:%{SYSLOGFACILITY} )?%{SYSLOGHOST:logsource} %{COMPID}:
+# POSTFIX %{SYSLOGTIMESTAMP:timestamp} %{SYSLOGHOST:hostname} %{COMPID}: %{QUEUEID:queueid}
+# POSTFIX_MESSAGE %{SYSLOGTIMESTAMP:timestamp} %{IPORHOST:host} %{DATA:program}/%{DATA:subprog}\[%{NUMBER:pid}\]: %{POSTFIX_QUEUEID:queueid}:
+
+# Milter
+HELO (?:\[%{IP:helo}\]|%{HOST:helo}|%{DATA:helo})
+
+MILTERCONNECT %{QUEUEID:qid}: milter-reject: CONNECT from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; proto=%{WORD:proto}
+MILTERUNKNOWN %{QUEUEID:qid}: milter-reject: UNKNOWN from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; proto=%{WORD:proto}
+MILTEREHLO %{QUEUEID:qid}: milter-reject: EHLO from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; proto=%{WORD:proto} helo=<%{HELO}>
+MILTERMAIL %{QUEUEID:qid}: milter-reject: MAIL from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; from=<%{EMAILADDRESS:from}> proto=%{WORD:proto} helo=<%{HELO}>
+MILTERHELO %{QUEUEID:qid}: milter-reject: HELO from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; proto=%{WORD:proto} helo=<%{HELO}>
+MILTERRCPT %{QUEUEID:qid}: milter-reject: RCPT from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; from=<%{EMAILADDRESS:from}> to=<%{EMAILADDRESS:to}> proto=%{WORD:proto} helo=<%{HELO}>
+MILTERENDOFMESSAGE %{QUEUEID:qid}: milter-reject: END-OF-MESSAGE from %{RELAY:relay}: %{GREEDYDATA:milter_reason}; from=<%{EMAILADDRESS:from}> to=<%{EMAILADDRESS:to}> proto=%{WORD:proto} helo=<%{HELO}>
+
+# Postfix stuff
+QUEUEID (?:[A-F0-9]+|NOQUEUE)
+EMAILADDRESSPART [a-zA-Z0-9_.+-=:~]+
+EMAILADDRESS %{EMAILADDRESSPART:local}@%{EMAILADDRESSPART:remote}
+RELAY (?:%{HOSTNAME:relayhost}(?:\[%{IP:relayip}\](?::[0-9]+(.[0-9]+)?)?)?)
+#RELAY (?:%{HOSTNAME:relayhost}(?:\[%{IP:relayip}\](?:%{POSREAL:relayport})))
+POSREAL [0-9]+(.[0-9]+)?
+#DELAYS %{POSREAL:a}/%{POSREAL:b}/%{POSREAL:c}/%{POSREAL:d}
+#DELAYS (%{POSREAL}[/]*)+
+DSN %{NONNEGINT}.%{NONNEGINT}.%{NONNEGINT}
+STATUS sent|deferred|bounced|expired
+PERMERROR 5[0-9]{2}
+MESSAGELEVEL reject|warning|error|fatal|panic
+
+POSTFIXSMTPMESSAGE %{MESSAGELEVEL}: %{GREEDYDATA:reason}
+POSTFIXACTION discard|dunno|filter|hold|ignore|info|prepend|redirect|replace|reject|warn
+
+# postfix/smtp and postfix/lmtp, postfix/local and postfix/error
+POSTFIXSMTP %{POSTFIXSMTPRELAY}|%{POSTFIXSMTPCONNECT}|%{POSTFIXSMTP5XX}|%{POSTFIXSMTPREFUSAL}|%{POSTFIXSMTPLOSTCONNECTION}|%{POSTFIXSMTPTIMEOUT}
+# Jun 17 04:41:52 dir postfix/smtp[14434]: CE4FC560C0D: to=, relay=localhost[127.0.0.1]:2525, delay=0.32, delays=0.05/0.01/0.19/0.07, dsn=2.0.0, status=sent (250 2.0.0 Ok: queued as 1B6864661B2F)
+POSTFIXSMTPRELAY %{QUEUEID:qid}: to=<%{DATA:to}>,(?:\sorig_to=<%{DATA:orig_to}>,)? relay=%{RELAY},(?: delay=%{POSREAL:delay},)?(?: delays=%{DATA:delays}?,)?(?: conn_use=%{POSREAL:conn_use},)?( %{WORD}=%{DATA},)+? dsn=%{DSN:dsn}, status=%{STATUS:result} %{GREEDYDATA:reason}
+POSTFIXSMTPCONNECT connect to %{RELAY}: %{GREEDYDATA:reason}
+POSTFIXSMTP5XX %{QUEUEID:qid}: to=<%{EMAILADDRESS:to}>,(?:\sorig_to=<%{EMAILADDRESS:orig_to}>,)? relay=%{RELAY}, (%{WORD}=%{DATA},)+ dsn=%{DSN:dsn}, status=%{STATUS:result} \(host %{HOSTNAME}\[%{IP}\] said: %{PERMERROR:responsecode} %{DATA:smtp_response} \(in reply to %{DATA:command} command\)\)
+POSTFIXSMTPREFUSAL %{QUEUEID:qid}: host %{RELAY} refused to talk to me: %{GREEDYDATA:reason}
+POSTFIXSMTPLOSTCONNECTION %{QUEUEID:qid}: lost connection with %{RELAY} while %{GREEDYDATA:reason}
+POSTFIXSMTPTIMEOUT %{QUEUEID:qid}: conversation with %{RELAY} timed out while %{GREEDYDATA:reason}
+
+
+# postfix/smtpd
+POSTFIXSMTPD %{POSTFIXSMTPDCONNECTS}|%{POSTFIXSMTPDMILTER}|%{POSTFIXSMTPDACTIONS}|%{POSTFIXSMTPDTIMEOUTS}|%{POSTFIXSMTPDLOGIN}|%{POSTFIXSMTPDCLIENT}|%{POSTFIXSMTPDNOQUEUE}|%{POSTFIXSMTPDWARNING}|%{POSTFIXSMTPDLOSTCONNECTION}
+POSTFIXSMTPDCONNECTS (?:dis)?connect from %{RELAY}
+POSTFIXSMTPDMILTER %{MILTERCONNECT}|%{MILTERUNKNOWN}|%{MILTEREHLO}|%{MILTERMAIL}|%{MILTERHELO}|%{MILTERRCPT}
+POSTFIXSMTPDACTIONS %{QUEUEID:qid}: %{POSTFIXACTION:postfix_action}: %{DATA:command} from %{RELAY}: %{PERMERROR:responsecode} %{DSN:dsn} %{DATA}: %{DATA:reason}; from=<%{EMAILADDRESS:from}> to=<%{EMAILADDRESS:to}> proto=%{DATA:proto} helo=<%{HELO}>
+#POSTFIXSMTPDACTIONS %{QUEUEID:qid}: %{POSTFIXACTION:postfix_action}: %{DATA:command} from %{RELAY}: %{DATA:smtp_response}: %{DATA:reason}; from=<%{EMAILADDRESS:from}> to=<%{EMAILADDRESS:to}> proto=%{DATA:proto} helo=<%{HELO}>
+POSTFIXSMTPDTIMEOUTS timeout after %{DATA:command} from %{RELAY}
+POSTFIXSMTPDLOGIN %{QUEUEID:qid}: client=%{DATA:client}, sasl_method=%{DATA:saslmethod}, sasl_username=%{GREEDYDATA:saslusername}
+POSTFIXSMTPDCLIENT %{QUEUEID:qid}: client=%{GREEDYDATA:client}
+POSTFIXSMTPDNOQUEUE NOQUEUE: %{POSTFIXACTION:postfix_action}: %{DATA:command} from %{RELAY}: %{GREEDYDATA:reason}
+POSTFIXSMTPDWARNING warning:( %{IP}: | hostname %{HOSTNAME} )?%{GREEDYDATA:reason}
+# Jun  3 16:40:28 dir postfix/smtpd[16526]: improper command pipelining after HELO from 41.254.8.1.ZTE.WiMAX.dynamic.ltt.ly[41.254.8.1]: QUIT\r\n
+POSTFIXSMTPDLOSTCONNECTION (?:lost connection after %{DATA:smtp_response} from %{RELAY}|improper command pipelining after HELO from %{GREEDYDATA:reason})
+
+# postfix/cleanup
+POSTFIXCLEANUP %{POSTFIXCLEANUPMESSAGE}|%{POSTFIXCLEANUPMILTER}
+POSTFIXCLEANUPMESSAGE %{QUEUEID:qid}: (resent-)?message-id=(<)?%{GREEDYDATA:messageid}(>)?
+POSTFIXCLEANUPMILTER %{MILTERENDOFMESSAGE}
+
+# postfix/bounce
+POSTFIXBOUNCE %{QUEUEID:qid}: sender (non-)?delivery( status)? notification: %{QUEUEID:bouncequeueid}
+
+# postfix/qmgr and postfix/pickup
+# Jun 15 14:33:26 dir postfix/qmgr[1282]: 76A5C560C09: from=<2924~aduong=saigon.com@cebounce.trainwithcft.org>, size=21928, nrcpt=1 (queue active)
+POSTFIXQMGR %{QUEUEID:qid}: (?:removed|from=<(?:%{DATA:from})?>(?:, size=%{NUMBER:size}, nrcpt=%{NUMBER:nrcpt} \(%{GREEDYDATA:queuestatus}\))?)
+
+# postfix/anvil
+# May 19 19:33:17 dir postfix/scache[8102]: statistics: domain lookup hits=0 miss=1 success=0%
+#POSTFIXANVIL statistics:( %{DATA:anvilstatistic})?( for %{DATA:remotehost})?( at )?%{SYSLOGTIMESTAMP:timestamp}
+POSTFIXANVIL statistics: %{GREEDYDATA:reason}
+
+# postfix/trivial-rewrite
+POSTFIXREWRITE warning: do not list domain %{DATA:domain} in BOTH mydestination and virtual_alias_domains
+
+# AMAVISD
+USER_AGENT User-Agent|X-Mailer
+RECIPIENTS <%{EMAILADDRESS:recipient}>(,<%{GREEDYDATA:recipientlist}>)?
+ORIGIN (%{DATA:originating_net} )\[%{IP:relay}\](:%{NUMBER}) \[%{IP:originip}\]
+AMAVIS %{SYSLOGBASE} \(%{DATA}\) %{WORD:action} %{WORD:ccat} \{%{GREEDYDATA:policybank}\}, %{ORIGIN} <(%{EMAILADDRESS:from})> -> %{GREEDYDATA}, Queue-ID: %{QUEUEID}, Message-ID: <%{DATA:messageid}>%{GREEDYDATA:rest_of_message}
+
+#AMAVISDNEW %{SYSLOGBASE} \(%{DATA:amavisdid}\) %{WORD:action} %{WORD:ccat} %{GREEDYDATA:policybank}, (%{GREEDYDATA:origin_net}) \[%{IP:relayip}\](:%{POSINT}) \[%{IP:originip}\] <(%{EMAILADDRESS:from})?> -> %{RECIPIENTS:recipients}, Queue-ID:%{QUEUEID}, Message-ID: <%{DATA:messageid}>,( mail_id: %{DATA:mail_id},)? Hits: %{NUMBER:hits:float}, size: %{NUMBER:size:int},( queued_as: %{QUEUEID:qid},)? Subject: "%{DATA:subject}", From: %{DATA:from},( %{USER_AGENT}: %{DATA:user_agent},)? Tests: \[%{DATA:TESTS}\],( shortcircuit=%{WORD:shortcircuit},)?( autolearn=%{WORD:autolearn},)? %{POSINT:elapsedtime} ms
+
+#AMAVISDNEW %{SYSLOGBASE} \(%{DATA:amavisdid}\) %{WORD:action} %{WORD:ccat} %{GREEDYDATA:policybank}, \[%{RELAY:relayip}\] \[%{IP:originip}\] <(%{EMAILADDRESS:from})?> -> %{RECIPIENTS:recipients}, Message-ID: <%{DATA:messageid}>,( mail_id: %{DATA:mail_id},)? Hits: %{NUMBER:hits:float}, size: %{NUMBER:size:int},( queued_as: %{QUEUEID:qid},)? Subject: "%{DATA:subject}", From: %{DATA:from},( %{USER_AGENT}: %{DATA:user_agent},)? Tests: \[%{DATA:TESTS}\],( shortcircuit=%{WORD:shortcircuit},)?( autolearn=%{WORD:autolearn},)? %{POSINT:elapsedtime} ms
+
+# Dovecot
+# Jun 17 21:30:16 dir dovecot: imap(tin): Disconnected: Logged out in=397 out=45702
+# Jun 15 09:26:18 dir dovecot: imap(tin): Connection closed in=352 out=1726
+# Jun 19 01:19:29 dir dovecot: imap(pnguyen): Connection closed in=0 out=362
+#DOVEID dovecot: %{DATA:component}(?:\(%{DATA:user}\))?(:)?
+DOVEIMAP imap\(%{DATA:user}\): %{DATA:reason} in=%{NUMBER:inbytes} out=%{NUMBER:outbytes}
+
+# May 21 21:58:12 dir dovecot: master: Warning: /home/alex is no longer mounted. See http://wiki2.dovecot.org/Mountpoints
+# Jun  5 16:13:31 dir dovecot: anvil: Warning: Killed with signal 15 (by pid=1 uid=0 code=kill)
+DOVECMD anvil|auth|config|log|master
+DOVEMISC %{DOVECMD:command}: %{GREEDYDATA:reason}
+# DOVEMISC %{(anvil|auth|config|log|master):command}: %{GREEDYDATA:reason}
+
+DOVELOGIN imap-login: %{DATA:action}:(?: user=<(%{DATA:user})?>, (method=%{DATA:loginmethod}, )?rip=%{IP:rip}, lip=%{IP:lip},( mpid=%{NUMBER:mpid},( %{DATA:sectype},)?| %{DATA:securesession},)? session=<%{DATA:session}>| %{GREEDYDATA:reason})
+
+DOVELDA lda\((%{DATA:user})?\):( %{DATA:action}:)? msgid=(?:<%{DATA:mesgid}@%{DATA:domain}>|%{DATA:mesgid}):( saved mail to| stored mail into mailbox) .*?%{DATA:folder}.*?
+
+DOVEAUTH auth-worker\(%{NUMBER:pid}\): pam\((?:%{USERNAME:user}|%{EMAILADDRESS:user}),%{IP:ip}\): %{GREEDYDATA:reason}
+
+DOVECOT (?:%{SYSLOGTIMESTAMP:timestamp}|%{TIMESTAMP_ISO8601:timestamp8601}) (?:%{SYSLOGFACILITY} )?%{SYSLOGHOST:logsource} dovecot: (%{DOVEIMAP}|%{DOVELOGIN}|%{DOVELDA}|%{DOVEAUTH}|%{DOVEMISC})
+
+#PF %{SYSLOGBASE} (%{POSTFIXSMTP}|%{POSTFIXANVIL}|%{POSTFIXQMGR}|%{POSTFIXBOUNCE}|%{POSTFIXCLEANUP}|%{POSTFIXSMTPD}|%{AMAVIS})
+PF %{POSTFIX} (?:%{POSTFIXSMTP}|%{POSTFIXANVIL}|%{POSTFIXQMGR}|%{POSTFIXBOUNCE}|%{POSTFIXCLEANUP}|%{POSTFIXSMTPD}|%{POSTFIXREWRITE})
+
+MAILLOG (%{PF}|%{DOVECOT})
